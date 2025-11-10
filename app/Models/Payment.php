@@ -18,6 +18,12 @@ class Payment extends Model
         'amount',
         'status',
         'payment_url',
+        'qr_code_url',
+        'deeplink_url',
+        'va_number',
+        'bank',
+        'bill_key',
+        'biller_code',
         'raw_response',
     ];
 

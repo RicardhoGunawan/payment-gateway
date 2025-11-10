@@ -42,6 +42,138 @@ class MidtransService
     }
 
     /**
+     * Create Bank Transfer (Virtual Account) transaction using Core API
+     * Supports: BCA, BNI, BRI, CIMB
+     */
+    public function createBankTransferTransaction(array $params, string $bank): array
+    {
+        try {
+            $url = $this->getCoreApiUrl() . '/charge';
+            
+            $payload = [
+                'payment_type' => 'bank_transfer',
+                'transaction_details' => $params['transaction_details'],
+                'item_details' => $params['item_details'] ?? null,
+                'customer_details' => $params['customer_details'] ?? null,
+                'bank_transfer' => [
+                    'bank' => strtolower($bank),
+                ]
+            ];
+
+            // Add VA number if provided
+            if (isset($params['va_number'])) {
+                $payload['bank_transfer']['va_number'] = $params['va_number'];
+            }
+
+            // Add BCA specific fields if needed
+            if (strtolower($bank) === 'bca' && isset($params['bca'])) {
+                $payload['bca'] = $params['bca'];
+            }
+
+            // Add free_text if provided (for BCA)
+            if (isset($params['free_text'])) {
+                $payload['bank_transfer']['free_text'] = $params['free_text'];
+            }
+
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+                'Authorization' => $this->getAuthHeader(),
+            ])->post($url, $payload);
+
+            if ($response->failed()) {
+                throw new \Exception($response->json('status_message') ?? 'Failed to create bank transfer transaction');
+            }
+
+            $data = $response->json();
+
+            // Extract VA number
+            $vaNumber = null;
+            $bankName = null;
+            if (isset($data['va_numbers']) && is_array($data['va_numbers']) && count($data['va_numbers']) > 0) {
+                $vaNumber = $data['va_numbers'][0]['va_number'] ?? null;
+                $bankName = $data['va_numbers'][0]['bank'] ?? null;
+            }
+
+            return [
+                'success' => true,
+                'transaction_id' => $data['transaction_id'],
+                'order_id' => $data['order_id'],
+                'transaction_status' => $data['transaction_status'],
+                'va_number' => $vaNumber,
+                'bank' => $bankName,
+                'gross_amount' => $data['gross_amount'],
+                'expiry_time' => $data['expiry_time'] ?? null,
+                'raw_response' => $data,
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Midtrans Bank Transfer Error: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Create Mandiri Bill Payment transaction using Core API
+     */
+    public function createMandiriBillTransaction(array $params): array
+    {
+        try {
+            $url = $this->getCoreApiUrl() . '/charge';
+            
+            $payload = [
+                'payment_type' => 'echannel',
+                'transaction_details' => $params['transaction_details'],
+                'item_details' => $params['item_details'] ?? null,
+                'customer_details' => $params['customer_details'] ?? null,
+                'echannel' => $params['echannel'] ?? [
+                    'bill_info1' => 'Payment For:',
+                    'bill_info2' => 'Order Payment',
+                ]
+            ];
+
+            // Add bill_key if provided
+            if (isset($params['bill_key'])) {
+                $payload['echannel']['bill_key'] = $params['bill_key'];
+            }
+
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+                'Authorization' => $this->getAuthHeader(),
+            ])->post($url, $payload);
+
+            if ($response->failed()) {
+                throw new \Exception($response->json('status_message') ?? 'Failed to create Mandiri Bill transaction');
+            }
+
+            $data = $response->json();
+
+            return [
+                'success' => true,
+                'transaction_id' => $data['transaction_id'],
+                'order_id' => $data['order_id'],
+                'transaction_status' => $data['transaction_status'],
+                'bill_key' => $data['bill_key'] ?? null,
+                'biller_code' => $data['biller_code'] ?? null,
+                'gross_amount' => $data['gross_amount'],
+                'expiry_time' => $data['expiry_time'] ?? null,
+                'raw_response' => $data,
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Midtrans Mandiri Bill Error: ' . $e->getMessage());
+            
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Create GoPay/QRIS transaction using Core API
      */
     public function createQrisTransaction(array $params): array
@@ -212,5 +344,54 @@ class MidtransService
         $hash = hash('sha512', $orderId . $statusCode . $grossAmount . $serverKey);
         
         return $hash === $signatureKey;
+    }
+
+    /**
+     * Get available payment methods
+     */
+    public function getAvailablePaymentMethods(): array
+    {
+        return [
+            'snap' => [
+                'name' => 'Midtrans Snap',
+                'description' => 'Multiple payment methods',
+                'icon' => 'midtrans',
+            ],
+            'qris' => [
+                'name' => 'QRIS',
+                'description' => 'Scan QR Code with any e-wallet',
+                'icon' => 'qr-code',
+            ],
+            'bca_va' => [
+                'name' => 'BCA Virtual Account',
+                'description' => 'Transfer via BCA ATM/Mobile Banking',
+                'icon' => 'bank',
+                'bank_code' => 'bca',
+            ],
+            'bni_va' => [
+                'name' => 'BNI Virtual Account',
+                'description' => 'Transfer via BNI ATM/Mobile Banking',
+                'icon' => 'bank',
+                'bank_code' => 'bni',
+            ],
+            'bri_va' => [
+                'name' => 'BRI Virtual Account',
+                'description' => 'Transfer via BRI ATM/Mobile Banking',
+                'icon' => 'bank',
+                'bank_code' => 'bri',
+            ],
+            'mandiri_bill' => [
+                'name' => 'Mandiri Bill Payment',
+                'description' => 'Pay via Mandiri ATM/Mobile Banking',
+                'icon' => 'bank',
+                'bank_code' => 'mandiri',
+            ],
+            'cimb_va' => [
+                'name' => 'CIMB Niaga Virtual Account',
+                'description' => 'Transfer via CIMB ATM/Mobile Banking',
+                'icon' => 'bank',
+                'bank_code' => 'cimb',
+            ],
+        ];
     }
 }

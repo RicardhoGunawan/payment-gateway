@@ -18,9 +18,6 @@ Route::get('/products/{product}', [ProductController::class, 'show']);
 // Midtrans webhook (public but verified)
 Route::post('/midtrans/webhook', [MidtransWebhookController::class, 'handle']);
 
-// Note: Webhook akan menerima payment_type: "qris" jika dibayar via QRIS scanning
-// atau payment_type: "gopay" jika dibayar via GoPay app
-
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth
@@ -31,9 +28,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     
+    // Payment Methods
+    Route::get('/payment-methods', [PaymentController::class, 'getPaymentMethods']);
+    
     // Payments
     Route::post('/orders/{order}/payments', [PaymentController::class, 'createPayment']);
-    Route::post('/orders/{order}/payments/qris', [PaymentController::class, 'createQrisPayment']);
     Route::post('/payments/{payment}/cancel', [PaymentController::class, 'cancelPayment']);
     Route::get('/payments/{payment}/status', [PaymentController::class, 'checkStatus']);
 });
